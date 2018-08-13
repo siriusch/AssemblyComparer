@@ -1,8 +1,9 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace AssemblyComparer {
 	public static class Extensions {
@@ -30,6 +31,10 @@ namespace AssemblyComparer {
 				return attribute.Exclude;
 			}
 			return isPublicDefault;
+		}
+
+		public static string Replace(this IReadOnlyDictionary<string, string> keyValuePairs, string str) {
+			return Regex.Replace(str, @"\$(\w+)\$", m => keyValuePairs[m.Groups[1].Value]);
 		}
 
 		public static string GetFullName(this Type type) {

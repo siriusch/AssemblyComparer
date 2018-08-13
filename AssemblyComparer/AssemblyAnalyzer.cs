@@ -1,9 +1,12 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text;
+using System.Web;
 
 namespace AssemblyComparer {
 	public class AssemblyAnalyzer: MarshalByRefObject {
@@ -19,45 +22,15 @@ namespace AssemblyComparer {
 			return "";
 		}
 
-		private static ObfuscationAttribute GetObfuscationAttribute(MemberInfo member) {
-			return GetObfuscationAttribute(member.GetCustomAttributesData());
-		}
-
 		private static ObfuscationAttribute GetObfuscationAttribute(IEnumerable<CustomAttributeData> data) {
 			return data.InstantiateAttributes<ObfuscationAttribute>().SingleOrDefault();
 		}
 
-		public string[] Analyze(string assemblyFile) {
-			AppDomain.CurrentDomain.ReflectionOnlyAssemblyResolve +=
-					(sender, args) => {
-						var assemblyName = new AssemblyName(AppDomain.CurrentDomain.ApplyPolicy(args.Name));
-						try {
-							return Assembly.ReflectionOnlyLoad(assemblyName.FullName);
-						} catch (Exception ex) {
-							var fileName = Path.Combine(Path.GetDirectoryName(assemblyFile), assemblyName.Name+".exe");
-							if (!File.Exists(fileName)) {
-								fileName = Path.ChangeExtension(fileName, ".dll");
-							}
-							return Assembly.ReflectionOnlyLoadFrom(fileName);
-						}
-					};
-			var assembly = Assembly.ReflectionOnlyLoadFrom(assemblyFile);
-			var isAssemblyPublic = !assembly
-					.GetCustomAttributesData()
-					.InstantiateAttributes<ObfuscateAssemblyAttribute>()
-					.Select(a => a.AssemblyIsPrivate)
-					.SingleOrDefault();
-			var publicTypes = PublicTypes(assembly
-							.GetExportedTypes()
-							.Where(t => !t.IsNested), isAssemblyPublic)
-					.ToDictionary(p => p.Key, p => p.Value);
-			return publicTypes
-					.Keys
-					.SelectMany(t => ExpandType(t, publicTypes))
-					.ToArray();
+		private static bool IsDebugConditional(IEnumerable<CustomAttributeData> data) {
+			return data.InstantiateAttributes<ConditionalAttribute>().Any(a => string.Equals(a.ConditionString, "DEBUG", StringComparison.OrdinalIgnoreCase));
 		}
 
-		private IEnumerable<string> ExpandType(Type type, IReadOnlyDictionary<Type, bool> publicTypes) {
+		private static IEnumerable<string> ExpandType(Type type, IReadOnlyDictionary<Type, bool> publicTypes) {
 			var isMemberPublicDefault = publicTypes[type];
 			var typeName = type.GetFullName();
 			var builder = new StringBuilder();
@@ -69,8 +42,10 @@ namespace AssemblyComparer {
 			}
 			builder.Append(RenderInterfaces(type, publicTypes));
 			yield return builder.ToString();
-			foreach (var member in type.GetMembers(BindingFlags.Instance|BindingFlags.Static|BindingFlags.Public|BindingFlags.DeclaredOnly).Where(t => !(t is Type))) {
-				if (GetObfuscationAttribute(member).IsPublic(isMemberPublicDefault)) {
+			foreach (var member in type
+					.GetMembers(BindingFlags.Instance|BindingFlags.Static|BindingFlags.Public|BindingFlags.DeclaredOnly)
+					.Where(t => !(t is Type) && !IsDebugConditional(t.GetCustomAttributesData()))) {
+				if (GetObfuscationAttribute(member.GetCustomAttributesData()).IsPublic(isMemberPublicDefault)) {
 					builder.Length = 0;
 					switch (member) {
 					case FieldInfo field:
@@ -94,6 +69,19 @@ namespace AssemblyComparer {
 						builder.Append(field.Name);
 						builder.Append(":");
 						builder.Append(field.FieldType.GetFullName());
+						if (field.IsLiteral) {
+							builder.Append("=");
+							var obj = field.GetRawConstantValue();
+							// ReSharper disable once ConditionIsAlwaysTrueOrFalse
+							if (obj == null) {
+								builder.Append("null");
+							} else if (obj.GetType().IsPrimitive && !(obj is string) && !(obj is char)) {
+								builder.Append(Convert.ToString(obj, CultureInfo.InvariantCulture));
+							} else {
+								var str = HttpUtility.JavaScriptStringEncode(obj is IFormattable formattable ? formattable.ToString(null, CultureInfo.InvariantCulture) : obj.ToString(), true);
+								builder.Append(str.Replace("\uFFFE", @"\uFFFE").Replace("\uFFFF", @"\uFFFF"));
+							}
+						}
 						yield return builder.ToString();
 						break;
 					case PropertyInfo property:
@@ -167,19 +155,58 @@ namespace AssemblyComparer {
 			}
 		}
 
-		private IEnumerable<KeyValuePair<Type, bool>> PublicTypes(IEnumerable<Type> types, bool isParentPublic) {
+		private static IEnumerable<KeyValuePair<Type, bool>> PublicTypes(IEnumerable<Type> types, bool isParentPublic) {
 			foreach (var type in types) {
-				var attr = GetObfuscationAttribute(type);
-				if (!attr.IsPublic(isParentPublic)) {
+				var attrData = type.GetCustomAttributesData();
+				var obfuscationAttr = GetObfuscationAttribute(attrData);
+				if (!obfuscationAttr.IsPublic(isParentPublic) || IsDebugConditional(attrData)) {
 					// Type is private (obfuscation is allowed)
 					continue;
 				}
-				var isMemberPublicDefault = (attr != null) && attr.ApplyToMembers ? attr.Exclude : isParentPublic;
+				var isMemberPublicDefault = (obfuscationAttr != null) && obfuscationAttr.ApplyToMembers ? obfuscationAttr.Exclude : isParentPublic;
 				yield return new KeyValuePair<Type, bool>(type, isMemberPublicDefault);
 				foreach (var nestedType in PublicTypes(type.GetNestedTypes(), isMemberPublicDefault)) {
 					yield return nestedType;
 				}
 			}
+		}
+
+		public string[] Analyze(string assemblyFile, string assemblyLoadPath=null) {
+			return AnalyzeInternal(Assembly.ReflectionOnlyLoadFrom, assemblyFile, assemblyLoadPath ?? Path.GetDirectoryName(assemblyFile));
+		}
+
+		public string[] Analyze(byte[] assemblyData, string assemblyLoadPath) {
+			return AnalyzeInternal(Assembly.ReflectionOnlyLoad, assemblyData, assemblyLoadPath);
+		}
+
+		private string[] AnalyzeInternal<T>(Func<T, Assembly> getAssembly, T arg, string assemblyLoadPath) {
+			AppDomain.CurrentDomain.ReflectionOnlyAssemblyResolve +=
+					(sender, args) => {
+						var assemblyName = new AssemblyName(AppDomain.CurrentDomain.ApplyPolicy(args.Name));
+						try {
+							return Assembly.ReflectionOnlyLoad(assemblyName.FullName);
+						} catch (Exception ex) {
+							var fileName = Path.Combine(assemblyLoadPath, assemblyName.Name+".exe");
+							if (!File.Exists(fileName)) {
+								fileName = Path.ChangeExtension(fileName, ".dll");
+							}
+							return Assembly.ReflectionOnlyLoadFrom(fileName);
+						}
+					};
+			var assembly = getAssembly(arg);
+			var isAssemblyPublic = !assembly
+					.GetCustomAttributesData()
+					.InstantiateAttributes<ObfuscateAssemblyAttribute>()
+					.Select(a => a.AssemblyIsPrivate)
+					.SingleOrDefault();
+			var publicTypes = PublicTypes(assembly
+							.GetExportedTypes()
+							.Where(t => !t.IsNested), isAssemblyPublic)
+					.ToDictionary(p => p.Key, p => p.Value);
+			return publicTypes
+					.Keys
+					.SelectMany(t => ExpandType(t, publicTypes))
+					.ToArray();
 		}
 	}
 }

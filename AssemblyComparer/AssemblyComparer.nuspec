@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<package >
+	<metadata>
+		<id>AssemblyComparer</id>
+		<version>1.0.0</version>
+		<authors>siriusch</authors>
+		<owners>siriusch</owners>
+		<requireLicenseAcceptance>false</requireLicenseAcceptance>
+		<description>.NET tool which computes the new SemVer based on the latest NuGet package and build output</description>
+		<copyright>Copyright 2018 Sirius Technologies AG</copyright>
+		<dependencies />
+	</metadata>
+	<files>
+		<file src="bin\$Configuration$\AssemblyComparer.exe" target="tools" />
+		<file src="bin\$Configuration$\AssemblyComparer.exe.config" target="tools" />
+		<file src="bin\$Configuration$\AssemblyComparer.pdb" target="tools" />
+		<file src="bin\$Configuration$\NuGet.Core.dll" target="tools"  />
+		<file src="bin\$Configuration$\CommandLine.dll" target="tools" />
+		<file src="bin\$Configuration$\Microsoft.Web.XmlTransform.dll" target="tools" />
+		<file src="bin\$Configuration$\System.Console.dll" target="tools" />
+		<file src="bin\$Configuration$\System.Reflection.TypeExtensions.dll" target="tools" />
+	</files>
+</package>
