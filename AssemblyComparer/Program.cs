@@ -14,7 +14,7 @@ using NuGet;
 
 namespace AssemblyComparer {
 	public class Program {
-		private static readonly Regex rxVersion = new Regex(@"(?<=(?<!//[^\r\n]*)\[\s*assembly\s*:\s*Assembly(File|Informational)?Version\s*\(\s*"")[^""]+(?=""\s*\)\s*\])", RegexOptions.ExplicitCapture|RegexOptions.Singleline|RegexOptions.CultureInvariant|RegexOptions.RightToLeft);
+		private static readonly Regex rxVersion = new Regex(@"(?<=(?<!//[^\r\n]*)\[\s*assembly\s*:\s*Assembly(File|Informational)?Version\s*\(\s*"")[^""]+(?=""\s*\)\s*\])", RegexOptions.ExplicitCapture | RegexOptions.Singleline | RegexOptions.CultureInvariant | RegexOptions.RightToLeft);
 
 		public static string[] AnalyzeAssembly(string dllName) {
 			AppDomain domain = AppDomain.CreateDomain("AssemblyAnalyzer");
@@ -86,16 +86,14 @@ namespace AssemblyComparer {
 						Console.WriteLine(string.Join(Environment.NewLine, removed));
 						var version = package.Version.Version;
 						if (removed.Any()) {
-							version = new Version(version.Major + 1, version.Minor, version.Build);
-						}
-						else if (added.Any()) {
-							version = new Version(version.Major, version.Minor + 1, version.Build);
-						}
-						else {
+							version = new Version(version.Major + 1, 0, 0);
+						} else if (added.Any()) {
+							version = new Version(version.Major, version.Minor + 1, 0);
+						} else {
 							version = new Version(version.Major, version.Minor, version.Build + 1);
 						}
 						SemanticVersion semVer = new SemanticVersion(version, package.Version.SpecialVersion, package.Version.Metadata);
-						Console.WriteLine("New version: "+semVer);
+						Console.WriteLine("New version: " + semVer);
 						if (!options.DryRun) {
 							// ReSharper disable once StringLiteralTypo
 							Console.WriteLine($"##teamcity[buildNumber '{semVer}']");
@@ -119,11 +117,10 @@ namespace AssemblyComparer {
 										writer.Write(newContent);
 									}
 									stream.SetLength(stream.Position);
-									Console.WriteLine("Patched versions in "+assemblyInfo);
+									Console.WriteLine("Patched versions in " + assemblyInfo);
 								}
 							}
 						}
-
 					});
 			if (Debugger.IsAttached) {
 				Console.ReadKey();
