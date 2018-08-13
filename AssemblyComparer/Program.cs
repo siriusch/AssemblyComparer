@@ -4,6 +4,8 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Text;
+using System.Text.RegularExpressions;
 using System.Xml.Linq;
 
 using CommandLine;
@@ -12,6 +14,8 @@ using NuGet;
 
 namespace AssemblyComparer {
 	public class Program {
+		private static readonly Regex rxVersion = new Regex(@"(?<=(?<!//[^\r\n]*)\[\s*assembly\s*:\s*Assembly(File|Informational)?Version\s*\(\s*"")[^""]+(?=""\s*\)\s*\])", RegexOptions.ExplicitCapture|RegexOptions.Singleline|RegexOptions.CultureInvariant|RegexOptions.RightToLeft);
+
 		public static string[] AnalyzeAssembly(string dllName) {
 			AppDomain domain = AppDomain.CreateDomain("AssemblyAnalyzer");
 			try {
@@ -97,6 +101,25 @@ namespace AssemblyComparer {
 							Console.WriteLine($"##teamcity[buildNumber '{semVer}'])");
 							nuspec.Element("package").Element("metadata").Element("version").Value = semVer.ToString();
 							nuspec.Save(nuspecFile.FullName);
+							foreach (var assemblyInfo in Directory.EnumerateFiles(basePath, "AssemblyInfo.cs", SearchOption.AllDirectories)) {
+								using (var stream = File.Open(assemblyInfo, FileMode.Open, FileAccess.ReadWrite, FileShare.Read)) {
+									string content;
+									Encoding encoding;
+									using (var reader = new StreamReader(stream, Encoding.UTF8, true, 1024, true)) {
+										content = reader.ReadToEnd();
+										encoding = reader.CurrentEncoding;
+									}
+									string newContent = rxVersion.Replace(content, semVer.Version.ToString());
+									if (!StringComparer.InvariantCulture.Equals(content, newContent)) {
+										stream.Seek(0, SeekOrigin.Begin);
+										using (var writer = new StreamWriter(stream, encoding, 1024, true)) {
+											writer.Write(newContent);
+										}
+										stream.SetLength(stream.Position);
+										Console.WriteLine("Patched versions in "+assemblyInfo);
+									}
+								}
+							}
 						}
 
 					});
