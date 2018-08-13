@@ -98,7 +98,7 @@ namespace AssemblyComparer {
 						Console.WriteLine("New version: "+semVer);
 						if (!options.DryRun) {
 							// ReSharper disable once StringLiteralTypo
-							Console.WriteLine($"##teamcity[buildNumber '{semVer}'])");
+							Console.WriteLine($"##teamcity[buildNumber '{semVer}']");
 							nuspec.Element("package").Element("metadata").Element("version").Value = semVer.ToString();
 							nuspec.Save(nuspecFile.FullName);
 							foreach (var assemblyInfo in Directory.EnumerateFiles(basePath, "AssemblyInfo.cs", SearchOption.AllDirectories)) {
@@ -109,15 +109,17 @@ namespace AssemblyComparer {
 										content = reader.ReadToEnd();
 										encoding = reader.CurrentEncoding;
 									}
-									string newContent = rxVersion.Replace(content, semVer.Version.ToString());
-									if (!StringComparer.InvariantCulture.Equals(content, newContent)) {
-										stream.Seek(0, SeekOrigin.Begin);
-										using (var writer = new StreamWriter(stream, encoding, 1024, true)) {
-											writer.Write(newContent);
-										}
-										stream.SetLength(stream.Position);
-										Console.WriteLine("Patched versions in "+assemblyInfo);
+									var newContent = rxVersion.Replace(content, semVer.Version.ToString());
+									if (StringComparer.InvariantCulture.Equals(content, newContent)) {
+										// No change
+										continue;
 									}
+									stream.Seek(0, SeekOrigin.Begin);
+									using (var writer = new StreamWriter(stream, encoding, 1024, true)) {
+										writer.Write(newContent);
+									}
+									stream.SetLength(stream.Position);
+									Console.WriteLine("Patched versions in "+assemblyInfo);
 								}
 							}
 						}
