@@ -30,20 +30,22 @@ namespace AssemblyComparer {
 			return data.InstantiateAttributes<ConditionalAttribute>().Any(a => string.Equals(a.ConditionString, "DEBUG", StringComparison.OrdinalIgnoreCase));
 		}
 
-		private static IEnumerable<string> ExpandType(Type type, IReadOnlyDictionary<Type, bool> publicTypes) {
+		private IEnumerable<string> ExpandType(Type type, IReadOnlyDictionary<Type, bool> publicTypes) {
 			var isMemberPublicDefault = publicTypes[type];
 			var typeName = type.GetFullName();
 			var builder = new StringBuilder();
 			builder.Append("TYPE|");
 			builder.Append(typeName);
-			if (type.BaseType != null) {
+			var bindingFlags = BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public;
+			if (this.checkInheritance && type.BaseType != null) {
 				builder.Append("|INHERITS:");
 				builder.Append(type.BaseType.GetFullName());
+				bindingFlags = bindingFlags | BindingFlags.DeclaredOnly;
 			}
 			builder.Append(RenderInterfaces(type, publicTypes));
 			yield return builder.ToString();
 			foreach (var member in type
-					.GetMembers(BindingFlags.Instance|BindingFlags.Static|BindingFlags.Public|BindingFlags.DeclaredOnly)
+					.GetMembers(bindingFlags)
 					.Where(t => !(t is Type) && !IsDebugConditional(t.GetCustomAttributesData()))) {
 				if (GetObfuscationAttribute(member.GetCustomAttributesData()).IsPublic(isMemberPublicDefault)) {
 					builder.Length = 0;
@@ -169,6 +171,12 @@ namespace AssemblyComparer {
 					yield return nestedType;
 				}
 			}
+		}
+
+		private readonly bool checkInheritance;
+
+		public AssemblyAnalyzer(bool checkInheritance) {
+			this.checkInheritance = checkInheritance;
 		}
 
 		public string[] Analyze(string assemblyFile, string assemblyLoadPath=null) {

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -16,20 +17,20 @@ namespace AssemblyComparer {
 	public class Program {
 		private static readonly Regex rxVersion = new Regex(@"(?<=(?<!//[^\r\n]*)\[\s*assembly\s*:\s*Assembly(File|Informational)?Version\s*\(\s*"")[^""]+(?=""\s*\)\s*\])", RegexOptions.ExplicitCapture | RegexOptions.Singleline | RegexOptions.CultureInvariant | RegexOptions.RightToLeft);
 
-		public static string[] AnalyzeAssembly(string dllName) {
+		public static string[] AnalyzeAssembly(string dllName, bool checkInheritance) {
 			AppDomain domain = AppDomain.CreateDomain("AssemblyAnalyzer");
 			try {
-				var anaylzer = (AssemblyAnalyzer)domain.CreateInstanceFromAndUnwrap(Assembly.GetExecutingAssembly().CodeBase, typeof(AssemblyAnalyzer).FullName);
+				var anaylzer = (AssemblyAnalyzer)domain.CreateInstanceFromAndUnwrap(Assembly.GetExecutingAssembly().CodeBase, typeof(AssemblyAnalyzer).FullName, false, BindingFlags.Default, null, new object[] { checkInheritance }, CultureInfo.InvariantCulture, null);
 				return anaylzer.Analyze(dllName);
 			} finally {
 				AppDomain.Unload(domain);
 			}
 		}
 
-		public static string[] AnalyzeAssembly(byte[] dllData, string loadPath) {
+		public static string[] AnalyzeAssembly(byte[] dllData, string loadPath, bool checkInheritance) {
 			AppDomain domain = AppDomain.CreateDomain("AssemblyAnalyzer");
 			try {
-				var anaylzer = (AssemblyAnalyzer)domain.CreateInstanceFromAndUnwrap(Assembly.GetExecutingAssembly().CodeBase, typeof(AssemblyAnalyzer).FullName);
+				var anaylzer = (AssemblyAnalyzer)domain.CreateInstanceFromAndUnwrap(Assembly.GetExecutingAssembly().CodeBase, typeof(AssemblyAnalyzer).FullName, false, BindingFlags.Default, null, new object[] {checkInheritance}, CultureInfo.InvariantCulture, null);
 				return anaylzer.Analyze(dllData, loadPath);
 			} finally {
 				AppDomain.Unload(domain);
@@ -72,10 +73,10 @@ namespace AssemblyComparer {
 							IPackageFile packageFile;
 							if (files.TryGetValue(file.Key, out packageFile)) {
 								using (var stream = packageFile.GetStream()) {
-									allOld.UnionWith(AnalyzeAssembly(stream.ReadAllBytes(), Path.GetDirectoryName(file.Value)));
+									allOld.UnionWith(AnalyzeAssembly(stream.ReadAllBytes(), Path.GetDirectoryName(file.Value), options.CheckInheritance));
 								}
 							}
-							var allNew = new HashSet<string>(AnalyzeAssembly(file.Value), StringComparer.Ordinal);
+							var allNew = new HashSet<string>(AnalyzeAssembly(file.Value, options.CheckInheritance), StringComparer.Ordinal);
 							Console.WriteLine("Assembly Stats: Old={0}, New={1}", allOld.Count, allNew.Count);
 							added.AddRange(allNew.Except(allOld));
 							removed.AddRange(allOld.Except(allNew));
@@ -92,7 +93,7 @@ namespace AssemblyComparer {
 						} else {
 							version = new Version(version.Major, version.Minor, version.Build + 1);
 						}
-						SemanticVersion semVer = new SemanticVersion(version, package.Version.SpecialVersion, package.Version.Metadata);
+						var semVer = new SemanticVersion(version, package.Version.SpecialVersion, package.Version.Metadata);
 						Console.WriteLine("New version: " + semVer);
 						if (!options.DryRun) {
 							// ReSharper disable once StringLiteralTypo

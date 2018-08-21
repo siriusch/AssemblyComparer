@@ -32,6 +32,12 @@ namespace AssemblyComparer {
 			set;
 		}
 
+		[Option('i', "CheckInheritance", Default = false, HelpText = "Check type inheritance and declared members only.")]
+		public bool CheckInheritance {
+			get;
+			set;
+		}
+
 		[Option(HelpText = "The base path of the files defined in the nuspec file.")]
 		public string BasePath {
 			get;
