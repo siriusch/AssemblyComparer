@@ -47,10 +47,16 @@ namespace AssemblyComparer {
 			result.Append(type.Name);
 			if (type.IsGenericTypeDefinition || type.IsGenericType) {
 				result.Append("[[");
-				result.Append(string.Join(",", type.GetGenericArguments().Select(GetFullName)));
+				result.Append(String.Join(",", type.GetGenericArguments().Select(GetFullName)));
 				result.Append("]]");
 			}
 			return result.ToString();
+		}
+
+		public static void AddAllDistributed(this IEnumerable<KeyValuePair<string, bool>> pairs, HashSet<string> trueSet, HashSet<string> falseSet) {
+			foreach (var pair in pairs) {
+				(pair.Value ? trueSet : falseSet).Add(pair.Key);
+			}
 		}
 	}
 }

@@ -17,8 +17,8 @@ namespace AssemblyComparer {
 	public class Program {
 		private static readonly Regex rxVersion = new Regex(@"(?<=(?<!//[^\r\n]*)\[\s*assembly\s*:\s*Assembly(File|Informational)?Version\s*\(\s*"")[^""]+(?=""\s*\)\s*\])", RegexOptions.ExplicitCapture | RegexOptions.Singleline | RegexOptions.CultureInvariant | RegexOptions.RightToLeft);
 
-		public static string[] AnalyzeAssembly(string dllName, bool checkInheritance) {
-			AppDomain domain = AppDomain.CreateDomain("AssemblyAnalyzer");
+		public static KeyValuePair<string, bool>[] AnalyzeAssembly(string dllName, bool checkInheritance) {
+			var domain = AppDomain.CreateDomain("AssemblyAnalyzer");
 			try {
 				var anaylzer = (AssemblyAnalyzer)domain.CreateInstanceFromAndUnwrap(Assembly.GetExecutingAssembly().CodeBase, typeof(AssemblyAnalyzer).FullName, false, BindingFlags.Default, null, new object[] { checkInheritance }, CultureInfo.InvariantCulture, null);
 				return anaylzer.Analyze(dllName);
@@ -27,8 +27,8 @@ namespace AssemblyComparer {
 			}
 		}
 
-		public static string[] AnalyzeAssembly(byte[] dllData, string loadPath, bool checkInheritance) {
-			AppDomain domain = AppDomain.CreateDomain("AssemblyAnalyzer");
+		public static KeyValuePair<string, bool>[] AnalyzeAssembly(byte[] dllData, string loadPath, bool checkInheritance) {
+			var domain = AppDomain.CreateDomain("AssemblyAnalyzer");
 			try {
 				var anaylzer = (AssemblyAnalyzer)domain.CreateInstanceFromAndUnwrap(Assembly.GetExecutingAssembly().CodeBase, typeof(AssemblyAnalyzer).FullName, false, BindingFlags.Default, null, new object[] {checkInheritance}, CultureInfo.InvariantCulture, null);
 				return anaylzer.Analyze(dllData, loadPath);
@@ -62,6 +62,7 @@ namespace AssemblyComparer {
 						var basePath = options.GetbasePath();
 						var added = new List<string>();
 						var removed = new List<string>();
+						var ignored = new List<string>();
 						foreach (var file in nuspec
 								.Element("package")
 								.Element("files")
@@ -70,21 +71,25 @@ namespace AssemblyComparer {
 								.Where(pair => filter(pair.Key))) {
 							Console.WriteLine(file.Key + " => " + file.Value);
 							var allOld = new HashSet<string>(StringComparer.Ordinal);
-							IPackageFile packageFile;
-							if (files.TryGetValue(file.Key, out packageFile)) {
+							var ignore = new HashSet<string>(StringComparer.Ordinal);
+							if (files.TryGetValue(file.Key, out var packageFile)) {
 								using (var stream = packageFile.GetStream()) {
-									allOld.UnionWith(AnalyzeAssembly(stream.ReadAllBytes(), Path.GetDirectoryName(file.Value), options.CheckInheritance));
+									AnalyzeAssembly(stream.ReadAllBytes(), Path.GetDirectoryName(file.Value), options.CheckInheritance).AddAllDistributed(allOld, ignore);
 								}
 							}
-							var allNew = new HashSet<string>(AnalyzeAssembly(file.Value, options.CheckInheritance), StringComparer.Ordinal);
+							var allNew = new HashSet<string>(StringComparer.Ordinal);
+							AnalyzeAssembly(file.Value, options.CheckInheritance).AddAllDistributed(allNew, ignore);
 							Console.WriteLine("Assembly Stats: Old={0}, New={1}", allOld.Count, allNew.Count);
-							added.AddRange(allNew.Except(allOld));
-							removed.AddRange(allOld.Except(allNew));
+							added.AddRange(allNew.Except(allOld).Except(ignore));
+							removed.AddRange(allOld.Except(allNew).Except(ignore));
+							ignored.AddRange(ignore);
 						}
 						Console.WriteLine("*** ADDED ***");
 						Console.WriteLine(string.Join(Environment.NewLine, added));
 						Console.WriteLine("*** REMOVED ***");
 						Console.WriteLine(string.Join(Environment.NewLine, removed));
+						Console.WriteLine("*** IGNORED ***");
+						Console.WriteLine(string.Join(Environment.NewLine, ignored));
 						var version = package.Version.Version;
 						if (removed.Any()) {
 							version = new Version(version.Major + 1, 0, 0);
