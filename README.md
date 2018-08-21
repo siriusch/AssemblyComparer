@@ -62,6 +62,7 @@ We roughly have the following build steps in place to integrate AssemblyComparer
 | `-p ...`, `--Properties ...` | *Optional.* Accepts `key=value` pairs of properties. This can be used for filling placeholders in the paths of the nuspec file, e.g. `bin\$Configuration$\some.dll` and a `-p Configuration=Debug`, the resulting path would be `bin\Debug\some.dll`. *Note:* missing properties will cause a runtime exception. |
 | `--Files ...` | *Optional.* File patterns matched against the `src` attribute of the .nuspec `file` elements. If not specified, all files with the `.dll` extension will be matched. |
 | `--DryRun` | *Optional.* If specified, the analysis is output to the console but no changes are made. |
+| `-i`, `--CheckInheritance` | *Optional.* Controls whether the inheritance is seen as relevant or not during analysis. If enabled, the base type must match and only declared members are checked. If a base type is introduced and some members are moved to it, having the option enabled will cause a major version increment due to removed members on the type being analyzed, whereas without inheritance check only a minor version increment is done since the effective public API remains the same. |
 | `--BasePath ...` | *Optional.* The base path to use. By default it uses path where the .nuspec file is located. |
 
 ---
